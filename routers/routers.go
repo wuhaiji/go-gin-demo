@@ -1,14 +1,24 @@
 package routers
 
 import (
-	"encoding/json"
-	"gin_demo/util/jwt"
+	"encoding/gob"
+	"gin_demo/app/controller/auth"
+	"gin_demo/app/entity"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"net/http"
-	"strings"
+	"time"
 )
 
 type Option func(engine *gin.Engine)
+
+func (o Option) apply(logger *zap.Logger) {
+	//TODO implement me
+	panic("implement me")
+}
 
 var options []Option
 
@@ -16,68 +26,42 @@ func Include(optionParams ...Option) {
 	options = optionParams
 }
 func Init() *gin.Engine {
-	engine := gin.Default()
-	//组成全局异常处理
-	engine.Use(CustomExceptionHandler())
-	// 全局auth认证
-	engine.Use(JWTAuthMiddleware())
+	engine := gin.New()
+	logger, _ := zap.NewProduction(zap.AddStacktrace(zapcore.DPanicLevel))
+	engine.Use(Ginzap(logger, time.RFC3339, false))
+	// 异常处理
+	engine.Use(RecoveryWithZap(logger, false))
+
+	// 注册User结构体
+	gob.Register(entity.UserInfo{})
+	// 创建基于cookie的存储引擎，secret11111 参数是用于加密的密钥
+	store := cookie.NewStore([]byte("fjfjffkd"))
+	// 设置session中间件，参数gin-cookie，指的是session的名字，也是cookie的名字
+	// store是前面创建的存储引擎，我们可以替换成其他存储引擎
+	store.Options(sessions.Options{
+		MaxAge: 20 * 60, //30min
+		Path:   "/",
+	})
+	engine.Use(sessions.Sessions("SESSION_ID", store))
+	engine.Use(authMiddleware())
 	for _, option := range options {
 		option(engine)
 	}
 	return engine
 }
 
-// JWTAuthMiddleware 基于JWT的认证中间件
-func JWTAuthMiddleware() func(c *gin.Context) {
-	return func(c *gin.Context) {
-		// 客户端携带Token有三种方式 1.放在请求头 2.放在请求体 3.放在URI
-		// 这里假设Token放在Header的Authorization中，并使用Bearer开头
-		// 这里的具体实现方式要依据你的实际业务情况决定
-		authHeader := c.Request.Header.Get("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"msg": "请求头中auth为空",
-			})
-			c.Abort()
-			return
+func authMiddleware() gin.HandlerFunc {
+	return func(context *gin.Context) {
+		if context.Request.URL.Path == "/auth" {
+			context.Next()
 		}
-		// 按空格分割
-		parts := strings.SplitN(authHeader, " ", 2)
-		if !(len(parts) == 2 && parts[0] == "Bearer") {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code": 2004,
-				"msg":  "请求头中auth格式有误",
-			})
-			c.Abort()
+		currentUser := auth.GetCurrentUser(context)
+		if (currentUser == entity.UserInfo{}) {
+			context.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+			context.Abort()
 			return
+		} else {
+			context.Next()
 		}
-		// parts[1]是获取到的tokenString，我们使用之前定义好的解析JWT的函数来解析它
-		mc, err := jwt.ParseToken(parts[1])
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code": 2005,
-				"msg":  "无效的Token",
-			})
-			c.Abort()
-			return
-		}
-		// 将当前请求的username信息保存到请求的上下文c上
-		c.Set("username", mc.UserName)
-		c.Next() // 后续的处理函数可以用过c.Get("username")来获取当前请求的用户信息
-	}
-}
-func CustomExceptionHandler() func(c *gin.Context) {
-	return func(c *gin.Context) {
-		defer func() {
-			err := recover()
-			if err != nil { //用于捕获panic
-				errStr, err2 := json.Marshal(err)
-				if err2 != nil {
-					panic(err2)
-				}
-				c.String(http.StatusInternalServerError, string(errStr))
-			}
-		}()
-		c.Next() // 调用下一个处理
 	}
 }
