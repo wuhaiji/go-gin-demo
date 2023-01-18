@@ -1,0 +1,9 @@
+{
+  "level": "error",
+  "ts": 1668934060.2387385,
+  "caller": "routers/Logger.go:145",
+  "msg": "[Recovery from panic]",
+  "time": 1668934060.2387385,
+  "error": "测试异常",
+  "request": "GET /goods HTTP/1.1\r\nHost: localhost:8080\r\nAccept: */*\r\nAccept-Encoding: gzip, deflate, br\r\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VyTmFtZSI6IndoaiIsImlzcyI6Im15LXByb2plY3QiLCJleHAiOjE2Njg5NTAwMDd9.TF9RS8A0Yy7-AxDx3SXe5hDvQhl9gAB-kQVqUmfnEws\r\nConnection: keep-alive\r\nCookie: SESSION_ID=MTY2ODkzNDA1N3xEdi1CQkFFQ180SUFBUkFCRUFBQVpfLUNBQUVHYzNSeWFXNW5EQTBBQzJOMWNuSmxiblJWYzJWeUhHZHBibDlrWlcxdkwyRndjQzlsYm5ScGRIa3VWWE5sY2tsdVptX19nd01CQVFoVmMyVnlTVzVtYndIX2hBQUJBZ0VJVUdGemMzZHZjbVFCREFBQkNGVnpaWEp1WVcxbEFRd0FBQUFSXzRRT0FRTjNhR29CQmpFeU0zRjNaUUE9fOCSJ0ICw8y1XoIDMwZOAZ6YHcK2zNy4wxs2PAMf-ij5\r\nPostman-Token: c3c63f37-068b-45f0-84c2-a8b3de7d257f\r\nUser-Agent: PostmanRuntime/7.29.2\r\n\r\n"
+}

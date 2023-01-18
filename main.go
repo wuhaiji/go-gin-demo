@@ -1,15 +1,29 @@
 package main
 
 import (
-	"gin_demo/app/controller/auth"
-	"gin_demo/app/controller/blog"
-	"gin_demo/app/controller/shop"
+	"fmt"
+	"gin_demo/app/auth"
+	"gin_demo/app/blog"
+	"gin_demo/app/shop"
+	"gin_demo/config"
+	"gin_demo/logger"
 	"gin_demo/routers"
 	"github.com/fvbock/endless"
 	"log"
 )
 
 func main() {
+
+	if err := config.Init("./config.json"); err != nil {
+		panic(err)
+	}
+	// init logger
+	err := logger.InitLogger(config.Conf.LogConfig)
+	if err != nil {
+		fmt.Printf("init logger failed, err:%v\n", err)
+		return
+	}
+
 	routers.Include(shop.Routers, blog.Routers, auth.Routers)
 	router := routers.Init()
 
@@ -20,10 +34,10 @@ func main() {
 	// 接收到 SIGUSR2 信号将触发HammerTime
 	// SIGUSR1 和 SIGTSTP 被用来触发一些用户自定义的hook函数
 	if err := endless.ListenAndServe(":8080", router); err != nil {
-		log.Fatalf("listen: %s\n", err)
+		log.Fatalf("listen: %s\n\n", err)
 	}
 
-	log.Println("Server exiting")
+	log.Fatalf("Server exiting")
 
 	//srv := &http.Server{
 	//	Addr:    ":8080",

@@ -2,15 +2,14 @@ package routers
 
 import (
 	"encoding/gob"
-	"gin_demo/app/controller/auth"
+	"gin_demo/app/auth"
 	"gin_demo/app/entity"
+	"gin_demo/logger"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"net/http"
-	"time"
 )
 
 type Option func(engine *gin.Engine)
@@ -27,10 +26,10 @@ func Include(optionParams ...Option) {
 }
 func Init() *gin.Engine {
 	engine := gin.New()
-	logger, _ := zap.NewProduction(zap.AddStacktrace(zapcore.DPanicLevel))
-	engine.Use(Ginzap(logger, time.RFC3339, false))
+
+	engine.Use(logger.GinLogger())
 	// 异常处理
-	engine.Use(RecoveryWithZap(logger, false))
+	engine.Use(logger.RecoveryWithZap(false))
 
 	// 注册User结构体
 	gob.Register(entity.UserInfo{})

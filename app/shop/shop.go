@@ -1,8 +1,9 @@
 package shop
 
 import (
-	"gin_demo/app/controller/auth"
+	"gin_demo/app/auth"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"net/http"
 )
 
@@ -22,7 +23,8 @@ func NewBizError(msg string) BizError {
 
 func goodsHandler(context *gin.Context) {
 	currentUser := auth.GetCurrentUser(context)
-	panic(NewBizError("测试异常"))
+	//panic(NewBizError("测试异常"))
+	zap.L().Info("测试log")
 	context.JSON(http.StatusOK, gin.H{
 		"message": currentUser.Username + ":goodsHandler",
 	})

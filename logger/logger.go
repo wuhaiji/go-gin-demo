@@ -1,9 +1,9 @@
-// Package ginzap provides log handling using zap package.
-// Code structure based on ginrus package.
-package routers
+package logger
 
 import (
-	"gin_demo/app/controller/shop"
+	"gin_demo/app/shop"
+	"gin_demo/config"
+	"github.com/natefinch/lumberjack"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -27,65 +27,68 @@ type Config struct {
 	Context    Fn
 }
 
-// Ginzap returns a gin.HandlerFunc (middleware) that logs requests using uber-go/zap.
-//
-// Requests with errors are logged using zap.Error().
-// Requests without errors are logged using zap.Info().
-//
-// It receives:
-//  1. A time package format string (e.g. time.RFC3339).
-//  2. A boolean stating whether to use UTC time zone or local.
-func Ginzap(logger *zap.Logger, timeFormat string, utc bool) gin.HandlerFunc {
-	return GinzapWithConfig(logger, &Config{TimeFormat: timeFormat, UTC: utc})
+var Log *zap.Logger
+
+// InitLogger 初始化Logger
+func InitLogger(cfg *config.LogConfig) (err error) {
+	writeSyncer := getLogWriter(cfg.Filename, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
+	encoder := getEncoder()
+	var l = new(zapcore.Level)
+	err = l.UnmarshalText([]byte(cfg.Level))
+	if err != nil {
+		return
+	}
+	core := zapcore.NewCore(encoder, writeSyncer, l)
+	Log = zap.New(core, zap.AddCaller())
+	zap.ReplaceGlobals(Log) // 替换zap包中全局的logger实例，后续在其他包中只需使用zap.L()调用即可
+	return
 }
 
-// GinzapWithConfig returns a gin.HandlerFunc using configs
-func GinzapWithConfig(logger *zap.Logger, conf *Config) gin.HandlerFunc {
-	skipPaths := make(map[string]bool, len(conf.SkipPaths))
-	for _, path := range conf.SkipPaths {
-		skipPaths[path] = true
+func getEncoder() zapcore.Encoder {
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.TimeKey = "time"
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	encoderConfig.EncodeDuration = zapcore.SecondsDurationEncoder
+	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+	return zapcore.NewJSONEncoder(encoderConfig)
+}
+
+func getLogWriter(filename string, maxSize, maxBackup, maxAge int) zapcore.WriteSyncer {
+	lumberJackLogger := &lumberjack.Logger{
+		Filename:   filename,
+		MaxSize:    maxSize,
+		MaxBackups: maxBackup,
+		MaxAge:     maxAge,
 	}
+	return zapcore.AddSync(lumberJackLogger)
+}
 
+func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
-
-		start := time.Now()
-		// some evil middlewares modify this values
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
+		start := time.Now()
 		c.Next()
+		end := time.Now()
+		latency := end.Sub(start)
 
-		if _, ok := skipPaths[path]; !ok {
-			end := time.Now()
-			latency := end.Sub(start)
-			if conf.UTC {
-				end = end.UTC()
-			}
+		fields := []zapcore.Field{
+			zap.Int("status", c.Writer.Status()),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("ip", c.ClientIP()),
+			zap.String("user-agent", c.Request.UserAgent()),
+			zap.Duration("latency", latency),
+		}
 
-			fields := []zapcore.Field{
-				zap.Int("status", c.Writer.Status()),
-				zap.String("method", c.Request.Method),
-				zap.String("path", path),
-				zap.String("query", query),
-				zap.String("ip", c.ClientIP()),
-				zap.String("user-agent", c.Request.UserAgent()),
-				zap.Duration("latency", latency),
+		if len(c.Errors) > 0 {
+			for _, e := range c.Errors.Errors() {
+				Log.Error(e, fields...)
 			}
-			if conf.TimeFormat != "" {
-				fields = append(fields, zap.String("time", end.Format(conf.TimeFormat)))
-			}
-
-			if conf.Context != nil {
-				fields = append(fields, conf.Context(c)...)
-			}
-
-			if len(c.Errors) > 0 {
-				// Append error field if this is an erroneous request.
-				for _, e := range c.Errors.Errors() {
-					logger.Error(e, fields...)
-				}
-			} else {
-				logger.Info(path, fields...)
-			}
+		} else {
+			Log.Info(path, fields...)
 		}
 	}
 }
@@ -95,8 +98,8 @@ func GinzapWithConfig(logger *zap.Logger, conf *Config) gin.HandlerFunc {
 // All errors are logged using zap.Error().
 // stack means whether output the stack info.
 // The stack info is easy to find where the error occurs but the stack info is too large.
-func RecoveryWithZap(logger *zap.Logger, stack bool) gin.HandlerFunc {
-	return CustomRecoveryWithZap(logger, stack)
+func RecoveryWithZap(stack bool) gin.HandlerFunc {
+	return CustomRecoveryWithZap(stack)
 }
 
 // CustomRecoveryWithZap returns a gin.HandlerFunc (middleware) with a custom recovery handler
@@ -104,7 +107,7 @@ func RecoveryWithZap(logger *zap.Logger, stack bool) gin.HandlerFunc {
 // All errors are logged using zap.Error().
 // stack means whether output the stack info.
 // The stack info is easy to find where the error occurs but the stack info is too large.
-func CustomRecoveryWithZap(logger *zap.Logger, stack bool) gin.HandlerFunc {
+func CustomRecoveryWithZap(stack bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -121,7 +124,7 @@ func CustomRecoveryWithZap(logger *zap.Logger, stack bool) gin.HandlerFunc {
 
 				httpRequest, _ := httputil.DumpRequest(c.Request, false)
 				if brokenPipe {
-					logger.Error(c.Request.URL.Path,
+					Log.Error(c.Request.URL.Path,
 						zap.Any("error", err),
 						zap.String("request", string(httpRequest)),
 					)
@@ -135,14 +138,14 @@ func CustomRecoveryWithZap(logger *zap.Logger, stack bool) gin.HandlerFunc {
 				}
 
 				if stack {
-					logger.Error("[Recovery from panic]",
+					Log.Error("[Recovery from panic]",
 						zap.Time("time", time.Now()),
 						zap.Any("error", err),
 						zap.String("request", string(httpRequest)),
 						zap.String("stack", string(debug.Stack())),
 					)
 				} else {
-					logger.Error("[Recovery from panic]",
+					Log.Error("[Recovery from panic]",
 						zap.Time("time", time.Now()),
 						zap.Any("error", err),
 						zap.String("request", string(httpRequest)),
